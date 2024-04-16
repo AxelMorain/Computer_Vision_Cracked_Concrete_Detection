@@ -564,9 +564,10 @@ Kernel_On_Image(images_t2_cracked[1000, :, :], kernel_size = 32 \
 Image_Display(images_t2_cracked[1000, :, :])
 
 
+import tensorflow as tf
 from keras.models import Sequential
 from keras.layers import Conv2D, Flatten, Dense, MaxPooling2D,LeakyReLU
-from keras import Input
+from keras import Input 
 from keras.metrics import BinaryAccuracy, FalseNegatives
 from keras.losses import BinaryCrossentropy
 from keras.utils import plot_model
@@ -611,11 +612,12 @@ def Model1():
     # Load initial weights
     #model1.save_weights('model1_initial_weights.h5')
     
+    '''
     try:
         model1.load_weights('model1_initial_weights.h5')
     except:
         model1.save_weights('model1_initial_weights.h5')
-    
+    '''
     return model1
 
 
@@ -665,10 +667,9 @@ print('Test set accuracy: {}%'.format(test_accuracy * 100))
 # Yay!!!!! Awesome !!!!
 
 # Let's save this beautiful model ! =) 
-model1.save('model1_take2.keras')
+model1.save('model1_take2.tf', save_format='tf')
 
-
-
+#model1_test = tf.keras.models.load_model('model1_take2.tf')
 
 '''
 Notes:
@@ -696,6 +697,10 @@ those gorgeous kernels are doing ! Yay !!!
 
 # Let's find an interseting image to follow throught the process
 Image_Display(images_t2_cracked[1000 , :, : ])
+[Image_Display(images_t2_cracked[i, :, :], title = 'image i = '+ str(i))\
+ for i in range(50, 100, 3) ]
+#i = 33, 74, 80  is pretty good
+
 coolimage = images_t2_cracked[1000 , :, : ]
 
 
@@ -711,60 +716,26 @@ print('Shape of kernel1 = {}'.format(kernel1.shape))
                ,title = 'kernel from \n kernel_list1 #' + str(i))\
  for i in range(kernel_list1.shape[3])]
     
-# They are all ugly....
+# None of them are strikingly interesting...
 # Let's re-create the feature maps anyway...
-
-
-test = np.array([[5, 3, 8],[3,2,8],[8,7,2]])
-test1 = np.array([[1, 1, 1],[0, 0, 0],[-1, -1, -1]])
-testdottest1 = test @ test1
-testtimestest1 = test * test1
-testtimeTtest1 = test * test1.T
-testtimeTtest1.sum()
-
-pooled = Max_Pooling(coolimage, (3, 3))
-Image_Display(pooled, title = 'Pooled coolimage')
-
-conv = Convolution_with_Padding(pooled, kernel1)
-
-
-
-
-
-
-
-
-
-
-
-# Let's have a look at the second convolution layer
-conv2 = model1.layers[2]
-weights2 = conv2.get_weights()
-weights2[0].shape
-# Kernels of size 8x8 were used for this Conv2D layers
-kernel_list2 = weights2[0]
-
-# Let's look again for an interesting kernel
-[Image_Display(kernel_list2[:, :, :, i]\
-               ,title = 'kernel from \n kernel_list2 #' + str(i))\
- for i in range(kernel_list2.shape[3])]
-
-
 
 def Convolution_with_Padding(image, kernel):
     results = np.zeros(shape = image.shape)
     
     image1 = np.pad(image
-                   ,pad_width = (kernel.shape[0],kernel.shape[1])
+                   ,pad_width = (int(kernel.shape[0]/2)\
+                                 , int(kernel.shape[1]/2))
                    ,mode = 'constant'
                    )
+
     
     #with over lapping
-    for i in range(image1.shape[0] - kernel.shape[0]-10):
-        for j in range(image1.shape[1] - kernel.shape[1]-10):
+    for i in range(image1.shape[0] - kernel.shape[0]):
+        for j in range(image1.shape[1] - kernel.shape[1]):
             chunk = image1[i:i + kernel.shape[0],\
-                                    j:j + kernel.shape[1]]           
+                           j:j + kernel.shape[1]]           
             results[i, j] = (chunk * kernel.T).sum()
+        
     return results
 
 # we first need to apply the max pooling layer to an image before runing the
@@ -785,61 +756,31 @@ def Max_Pooling(image, pool_size):
     return results
 
 
-[Image_Display(images_t2_cracked[i, :, :], title = 'image #' + str(i)) \
-     for i in range(30)]
-# 28 is a good one
+pooled = Max_Pooling(coolimage, (3, 3))
+Image_Display(pooled, title = 'Pooled coolimage')
 
-goodimage = images_t2_cracked[28, :, :]
-Image_Display(goodimage, title = 'goodimage to follow through the algoritm')
+feature_map = Convolution_with_Padding(pooled, kernel1)
+Image_Display(feature_map, title = 'feature map from kernel1')
 
-pooled = Max_Pooling(goodimage, pool_size= (3,3))
-Image_Display(pooled, title = 'pooled 3x3 goodimage')
+# Nice !! Let's apply this to all the kernels of first convolution layer to the
+# same image
 
-# Apply the convolution to get the feature map
-featuremap1 = Convolution(pooled, kernel1)
-featuremap1 = skl.preprocessing.normalize(featuremap1)
-Image_Display(featuremap1, title = 'featuremap1 of goodimage')
+for i in range(kernel_list1.shape[3]):
+    kernel_temp = kernel_list1[:, :, 0, i]
+    featur_map_temp = Convolution_with_Padding(pooled, kernel_temp)
+    Image_Display(featur_map_temp, title = 'feature map from kernel{}'\
+                  .format(str(i)))
+    
+# Let's do this for other images as well 
+#i = 33, 74, 80  is pretty good
+coolimage = images_t2_cracked[80 , :, : ]
+Image_Display(coolimage, title = 'image i = 80')
 
+pooled = Max_Pooling(coolimage, (3, 3))
+Image_Display(pooled, title = 'Pooled coolimage')
 
-
-# We need to add the padding
-
-image, kernel = pooled, kernel1
-Image_Display(image)
-image1 = np.pad(image
-               ,pad_width = (kernel.shape[0],kernel.shape[1])
-               ,mode = 'constant'
-               )
-Image_Display(image1, title = 'padded image')
-results = np.zeros(shape = image.shape)
-
-#with over lapping
-for i in range(results.shape[0]):
-    print(str(i))
-    for j in range(results.shape[1]):
-        print('\t' + str(i))
-        
-        results[i, j] = (image1[i:i + kernel.shape[0],\
-                                j:j + kernel.shape[1]] @ kernel).sum()
-            
-results = skl.preprocessing.normalize(results)
-Image_Display(results)
-
-
-i, j = 20, 80
-Image_Display(image1[i:i + kernel.shape[0],\
-                        j:j + kernel.shape[1]], title = ' image1 window')
-Image_Display(kernel1, title = 'kernel1')
-results[i, j] = (image1[i:i + kernel.shape[0],\
-                        j:j + kernel.shape[1]] @ kernel).sum()
-
-image1[i:i + kernel.shape[0], j:j + kernel.shape[1]].shape
-test1 = image1[i:i + kernel.shape[0], j:j + kernel.shape[1]]
-
-kernel.shape
-test2 = kernel
-
-test3 = test1 @ test2
-test3.shape
-Image_Display(test3, title = ' window @ kernel')
-
+for i in range(kernel_list1.shape[3]):
+    kernel_temp = kernel_list1[:, :, 0, i]
+    featur_map_temp = Convolution_with_Padding(pooled, kernel_temp)
+    Image_Display(featur_map_temp, title = 'feature map from kernel{}'\
+                  .format(str(i)))
