@@ -84,9 +84,14 @@ Importing pictures ------------------------------------------------------------
 -------------------------------------------------------------------------------
 '''
 
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
-print(os.getcwd())
+try:
+    script_dir = os.path.dirname(os.path.abspath(__file__)) #runs on VS Code
+except NameError:
+    script_dir = os.getcwd()# Runs in Spyder
+
+os.chdir(script_dir)
 list_Decks_Cracked = glob.glob('archive (2)/Decks/Cracked/*.jpg')
+
 
 # Start with the first 10 images of cracked decks
 decks_c = np.array([np.array(Image.open(fname)) \
@@ -98,14 +103,20 @@ decks_c_all = np.array([np.array(Image.open(fname)) \
 # display the first 10 images
 [Image_Display(decks_c[i, :, :, :], title = 'image ' + str(i)) \
                for i in range(len(decks_c))]
+Image_Display(decks_c_all[1000, :, :, :])
 # images 4, 8, 9, 1000 are quite interesting
 
 # Get the solid / non-cracked images
-print(os.getcwd())
 list_Decks_Solid = glob.glob('archive (2)/Decks/Non-cracked/*.jpg')
 
 decks_s_all = np.array([np.array(Image.open(fname)) \
                     for fname in list_Decks_Solid[:]])
+
+# Display some of the solid/non-cracked images
+[Image_Display(decks_s_all[im, :, :, :], title= "Some Solid Images")\
+ for im in range(0, 10000, 3000)]
+
+    
 # cleaning
 del list_Decks_Solid
 
@@ -119,108 +130,22 @@ Image manipulation ------------------------------------------------------------
 #------------------------------------------------------------------------------
 # Take 1 ------------------------------
 
-# Details and thought process about how I made the function bellow
-"""
-images = decks_c
-print(images.shape)
-
-image1 = images[4, :, :, :]
-print(image1.shape)
-# Each image is made of the 3 rgb layers
-plt.imshow(image1)
-plt.show()
-plt.clf()
 
 
-
-# Take 1 - preprocessing overview
-# 1. turn the image gray scale
-# 2. Contrast enhancement with ski.exposure.
-# 3. ski.restoration.denoise_bilateral -- CANCEL
-# 4. Thresholding
-
-# Take 1--1.
-image1_a = ski.color.rgb2gray(image1)
-print(image1_a.shape)
-Image_Display(title = 'Before, image1', image = image1)
-Image_Display(image1_a,title =  'After, rgb2gray')
-# This not much better, let's try something else...
-image1_a1 = image1[:, :, 0] # just grab the Red layer
-Image_Display(title = 'Before, image1', image = image1)
-Image_Display(image1_a1, title =  'After, image1 first layer')
-# this is computationaly lighter  and works equaly well!
-image1_a1 = normalize(image1_a1)
-plt.hist(image1_a1.ravel(), bins = 256)
-plt.show()
-plt.clf()
-image1_a = image1_a1
-Image_Display(image1_a, title = 'image1_a')
-
-
-# Take 1--2. histtogram equalization
-# Try a global histogram equalization
-image1_b1 = ski.exposure.equalize_hist(image1_a)
-plt.hist(image1_b1.ravel(), bins = 256)
-plt.show()
-plt.clf()
-Image_Display(image1_b1, title = 'applied global hist -- nope')
-# nope.... This is very ugly....
-# Try a local histogram equalization algorithm
-image1_b2 = ski.exposure.equalize_adapthist(image1_a)
-plt.hist(image1_b2.ravel(), bins = 256)
-plt.hist(image1_a.ravel(), bins = 256, color = 'red')
-plt.legend(['image1_c2', 'image1_a'])
-plt.show()
-plt.clf()
-Image_Display(image1_a, title = 'image1_a - before')
-Image_Display(image1_b2, title = 'image1_c2 - after')
-# This is better
-image1_b = image1_b2
-Image_Display(image1_b, title = 'image1_b')
-
-
-# Take 1--3. -- cancel!
-image1_c = ski.restoration.denoise_bilateral(image1_b )
-Image_Display(image1_b, title = 'image1_b -- before')
-Image_Display(image1_c, title = 'Denoised, image1_c -- after')
-# Nope... this is worst...
-del image1_c
-
-# Take 1--4 Thresholding
-thresh = ski.filters.threshold_otsu(image1_b)
-image1_c = image1_b > thresh
-Image_Display(image1_c, title = 'thresholded')
-
-# This is all pretty good, let's make it a function
-"""
-
-def Image_Manipulation_Take_1(image):
-
-    # Take 1
-    # 1. rgb2gray
-    # 2. Contrast enhancement with ski.exposure.
-    # 3. ski.restoration.denoise_bilateral -- CANCEL
-    # 4. Thresholding
-        
-    # Take 1--1.
-    image1_a1 = image[:, :, 0] # just grab the Red layer
-
-    # this is computationaly lighter  and works equaly well!
-    image1_a1 = normalize(image1_a1)
-    image1_a = image1_a1
-
-    # Take 1--2. histtogram equalization
-    # Try a global histogram equalization
-    # Try a local histogram equalization algorithm
-    image1_b2 = ski.exposure.equalize_adapthist(image1_a)
-    # This is better
-    image1_b = image1_b2
+def image_manipulation_take_1(image: np.ndarray) -> np.ndarray:
+    """
+    Preprocesses an RGB image for crack detection.
+    Apply global pixael normalization 
     
-    # Take 1--4 Thresholding
-    thresh = ski.filters.threshold_otsu(image1_b)
-    image1_c = image1_b > thresh
-    
-    return image1_c
+    Args:
+        image: RGB image array of shape (H, W, 3)
+    Returns:
+        Binary image array of shape (H, W)
+    """
+    red = image[:, :, 0].astype(np.float32) / 255.0
+    enhanced = ski.exposure.equalize_adapthist(red)
+    return enhanced > ski.filters.threshold_otsu(enhanced)
+
 
 # End of Image Manipulation Take 1 ----
 #------------------------------------------------------------------------------
@@ -357,30 +282,21 @@ def Image_Manipulation_Take_2(rgb_image_tensor):
 # Image_Manipulation_Take_1 -----------
 
 #Test run on the 10 pictures
-images_1 = np.zeros(shape = (len(decks_c), 256, 256))
+
+images_1 = np.stack([image_manipulation_take_1(im) for im in decks_c])
+
+for i in range(len(images_1)):
+    Image_Display(images_1[i, :, :], title= f"Images After Manipulation id: {i}")
 
 
-for i in range(len(decks_c)):
-    images_1[i, :, :] = Image_Manipulation_Take_1(decks_c[i, :,:,:])
-print('images_1 shape ' + str(images_1.shape))
-# display the first 10 images
-[Image_Display(images_1[i, :, :], title = 'image ' + str(i)) \
-               for i in range(images_1.shape[0])]
 # it is all very ugly, but maybe the computer will have an easier time 
 # understanding it than me.
     
 # Apply the Image_Manipulation_Take_1 to all the pictures in the decks folder
 # First the cracked pictures, then the uncracked ones
-decks_c_all = np.array([np.array(Image.open(fname)) \
-                    for fname in list_Decks_Cracked[:]])
-    
-print('decks_c_all shape ' + str(decks_c_all.shape))
 
-images_t1_cracked = np.zeros(shape = (decks_c_all.shape[0], 256, 256))
-print('images_t1_cracked shape ' + str(images_t1_cracked.shape))
-
-for i in range(decks_c_all.shape[0]):
-    images_t1_cracked[i, :, :] = Image_Manipulation_Take_1(decks_c_all[i, :,:,:])
+images_t1_cracked = np.stack([image_manipulation_take_1(im) \
+                              for im in decks_c_all])
 # That took less than a minute to run ! Pretty quick!
 
 Image_Display(images_t1_cracked[100, :, :], title = 'images_t1_cracked 100')
@@ -389,17 +305,17 @@ Image_Display(images_t1_cracked[2000, :, :], title = 'images_t1_cracked 2000')
 # Looking as expected !
 
 # Now Let's do the same on the uncracked/solid one's
-images_t1_solid = np.zeros(shape = (decks_s_all.shape[0], 256, 256))
 
-for i in range(decks_s_all.shape[0]):
-    images_t1_solid[i, :, :] = Image_Manipulation_Take_1(decks_s_all[i, :,:,:])
-# It only took a few minutes ! This is really fast !
+images_t1_solid = np.stack([image_manipulation_take_1(im) \
+                            for im in decks_s_all])
 
-images_t1_solid.shape
+
+print(images_t1_solid.shape)
 Image_Display(images_t1_solid[100, :, :], title = 'images_t1_solid 100')
 Image_Display(images_t1_solid[1000, :, :], title = 'images_t1_solid 1000')
 Image_Display(images_t1_solid[10000, :, :], title = 'images_t1_solid 10000')
 # Looking as expected !
+
 
 # Cleaning time
 del i, images_1
