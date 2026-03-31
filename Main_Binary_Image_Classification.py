@@ -66,6 +66,7 @@ import skimage as ski
 import sklearn as skl
 import random
 from sklearn.preprocessing import normalize
+import pprint
 
 
 import glob
@@ -87,7 +88,7 @@ Importing pictures ------------------------------------------------------------
 try:
     script_dir = os.path.dirname(os.path.abspath(__file__)) #runs on VS Code
 except NameError:
-    script_dir = os.getcwd()# Runs in Spyder
+    script_dir = os.path.dirname(os.path.abspath(r'C:\Users\morai\Python_Project\Binary Classification Defect Detection\Computer_Vision_Cracked_Concrete_Detection-main\Computer_Vision_Cracked_Concrete_Detection-main\Main_Binary_Image_Classification.py'))  # Runs in Spyder
 
 os.chdir(script_dir)
 list_Decks_Cracked = glob.glob('archive (2)/Decks/Cracked/*.jpg')
@@ -368,23 +369,20 @@ Data Preparation --------------------------------------------------------------
 '''
 
 #------------------------------------------------------------------------------
-# Create X for Take 1 -----------------
+# Create X and y for Take 1 -----------------
 
-# The dataset is too large to decently run.
-# Let's first only use 4000 images from images_t1_solid
-solide_images = 11595
-X_lengh = images_t1_cracked.shape[0] + images_t1_solid[:solide_images, :, :].shape[0]
-X = np.zeros(shape = (X_lengh, 256, 256, 1))
-X[0:images_t1_cracked.shape[0],:,:, :] =\
-    np.reshape(images_t1_cracked, newshape = (2025, 256, 256, 1))
-X[images_t1_cracked.shape[0]:, :, :] =\
-    np.reshape(images_t1_solid[:solide_images, :, :], newshape = (solide_images, 256, 256, 1))
+N_SOLID = 11595  # cap solid samples to limit memory usage and reduce class imbalance
+
+cracked = images_t1_cracked[:, :, :, np.newaxis]              # (n_cracked, 256, 256, 1)
+solid   = images_t1_solid[:N_SOLID, :, :, np.newaxis]         # (N_SOLID,   256, 256, 1)
+
+X = np.concatenate([cracked, solid], axis=0)                   # (n_cracked + N_SOLID, 256, 256, 1)
 
 
 
-# Create y
-y = np.zeros(shape = (X.shape[0],))
-y[:images_t1_cracked.shape[0]] = 1
+# Create y  (1 = cracked, 0 = solid)
+y = np.concatenate([np.ones(cracked.shape[0]), np.zeros(solid.shape[0])])
+
 
 # Create X_train, y_train, X_test, y_test
 from sklearn.model_selection import train_test_split
@@ -451,6 +449,46 @@ for i in range(20):
 
 
 
+#
+# Memory check!
+# Before training the model I wanna have a look at the memory usage
+# The more RAM we have available the larger the batches can be during training 
+#
+
+import sys
+
+def var_memory_report():
+    total = 0
+    rows = []
+    for name, obj in sorted(globals().items()):
+        if name.startswith('_'):
+            continue
+        if isinstance(obj, np.ndarray):
+            size = obj.nbytes
+        else:
+            size = sys.getsizeof(obj)
+        total += size
+        rows.append((name, type(obj).__name__, size))
+    
+    rows.sort(key=lambda x: -x[2])
+    print(f"{'Variable':30s} {'Type':20s} {'Size (MB)':>10}")
+    print("-" * 65)
+    for name, typ, size in rows:
+        print(f"{name:30s} {typ:20s} {size/1e6:>10.4f}")
+    print("-" * 65)
+    print(f"{'TOTAL':30s} {'':20s} {total/1e6:>10.4f}")
+
+var_memory_report()
+
+#
+# I know we are are going to need to re-work the data the source data sets
+# The only one I will need again is X and y which will free up almost a GB
+#
+
+del X, y
+
+
+
 '''
 -------------------------------------------------------------------------------
 Model Building ! --------------------------------------------------------------
@@ -459,101 +497,127 @@ Model Building ! --------------------------------------------------------------
 
 # Let's visualize some kernel size before creating our model:
 
-def Kernel_On_Image(image, kernel_size, top_left_corner_coordinate):
-    im = np.zeros_like(image)
-    im[:,:] = image
-    # Sanity check
-    #print(np.may_share_memory(im, images_t1_cracked[1000, :, :]))
-    im[top_left_corner_coordinate[0] : top_left_corner_coordinate[0] + kernel_size
-       ,top_left_corner_coordinate[1] : top_left_corner_coordinate[1] + kernel_size] = .5
-    Image_Display(im, title = 'Image with kernel in gray')
-    return
+def visualize_kernel(image: np.ndarray, kernel_size: int, top_left: tuple[int, int]) -> None:
+    """Overlay a kernel footprint on an image and display it.
 
-Kernel_On_Image(images_t2_cracked[1000, :, :], kernel_size = 32 \
-                , top_left_corner_coordinate = [100, 100])
-Image_Display(images_t2_cracked[1000, :, :])
+    Args:
+        image:       2-D grayscale array (H, W).
+        kernel_size: Side length of the square kernel overlay in pixels.
+        top_left:    (row, col) of the kernel's top-left corner.
+    """
+    row, col = top_left
+    h, w = image.shape[:2]
+    if row < 0 or col < 0 or row + kernel_size > h or col + kernel_size > w:
+        raise ValueError(
+            f"Kernel [{row}:{row+kernel_size}, {col}:{col+kernel_size}] "
+            f"falls outside image bounds ({h}, {w})."
+        )
+    im = image.copy()
+    im[row:row + kernel_size, col:col + kernel_size] = 0.5
+    Image_Display(im, title=f'Kernel {kernel_size}x{kernel_size} at ({row}, {col})')
+
+
+visualize_kernel(images_t1_cracked[1000, :, :], kernel_size=32, top_left=(100, 100))
+Image_Display(images_t1_cracked[1000, :, :])
 
 
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D, Flatten, Dense, MaxPooling2D, LeakyReLU
 from tensorflow.keras import Input
-from tensorflow.keras.metrics import BinaryAccuracy, FalseNegatives
-from tensorflow.keras.losses import BinaryCrossentropy
+from tensorflow.keras.metrics import BinaryAccuracy, F1Score
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.optimizers import Adam, SGD
-import tensorflow.keras.utils
 
 
-
-def Model1():
-    model1 = Sequential()
-    model1.add(Input(shape = (256, 256, 1)))
-    model1.add(MaxPooling2D(pool_size = (3, 3)
-                            ,padding = 'same'                        
-                            ))
-    model1.add(Conv2D(filters = 10
-                      ,input_shape = (256, 256, 1)
-                      ,kernel_size = 16
-                      ,strides = (1, 1)
-                      ,padding = 'same'
-                      ,activation = LeakyReLU()
-                      ,))
-    model1.add(Conv2D(filters = 10
-                      ,kernel_size = 8
-                      ,strides = (1, 1)
-                      ,padding = 'same'
-                      ,activation = LeakyReLU()
-                      ))
-    model1.add(Flatten())
-    model1.add(Dense(units = 10
-                     ,activation = LeakyReLU()
-                     ))
-    model1.add(Dense(units= 1
-                     ,activation = 'sigmoid'))
-    
-    model1.compile(optimizer = SGD(learning_rate = 0.01/1)
-                   ,loss = BinaryCrossentropy()
-    #               ,metrics = [BinaryAccuracy(), FalseNegatives()]
-                    ,metrics = [BinaryAccuracy()]
-                   ,)
-    print(model1.summary())
-    
-    # Load initial weights
-    #model1.save_weights('model1_initial_weights.h5')
-    
-    '''
-    try:
-        model1.load_weights('model1_initial_weights.h5')
-    except:
-        model1.save_weights('model1_initial_weights.h5')
-    '''
-    return model1
+class F1ScoreBinary(F1Score):
+    """F1Score wrapper that handles 1-D label arrays (shape (N,) instead of (N, 1))."""
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        if len(y_true.shape) == 1:
+            y_true = tf.expand_dims(y_true, axis=-1)
+        if len(y_pred.shape) == 1:
+            y_pred = tf.expand_dims(y_pred, axis=-1)
+        return super().update_state(y_true, y_pred, sample_weight)
 
 
-model1 = Model1()
+class FocalLoss(tf.keras.losses.Loss):
+    """Binary focal loss for imbalanced classification.
+
+    Down-weights easy examples so training focuses on hard/minority ones.
+
+    Args:
+        gamma: Focusing parameter — higher = more focus on hard examples (default 2.0).
+        alpha: Class balance weight for the positive class (default 0.25).
+    """
+    def __init__(self, gamma: float = 2.0, alpha: float = 0.25):
+        super().__init__()
+        self.gamma = gamma
+        self.alpha = alpha
+
+    def call(self, y_true, y_pred):
+        y_pred = tf.clip_by_value(y_pred, 1e-7, 1 - 1e-7)
+        bce = -y_true * tf.math.log(y_pred) - (1 - y_true) * tf.math.log(1 - y_pred)
+        p_t = y_true * y_pred + (1 - y_true) * (1 - y_pred)
+        focal_weight = self.alpha * tf.pow(1 - p_t, self.gamma)
+        return tf.reduce_mean(focal_weight * bce)
+
+
+def build_model(
+    input_shape: tuple[int, int, int] = (256, 256, 1),
+    n_filters: int = 10,
+    learning_rate: float = 0.0001,
+) -> Sequential:
+    """Build and compile the binary crack-detection CNN.
+
+    Architecture: MaxPool → Conv(16×16) → Conv(8×8) → Flatten → Dense → sigmoid.
+
+    Args:
+        input_shape:   (H, W, channels) of the input images.
+        n_filters:     Number of filters in each Conv2D layer.
+        learning_rate: Learning rate for the SGD optimiser.
+
+    Returns:
+        Compiled Keras Sequential model ready for training.
+    """
+    model = Sequential([
+        Input(shape=input_shape),
+        MaxPooling2D(pool_size=(3, 3), padding='same'),
+        Conv2D(filters=n_filters, kernel_size=16, strides=(1, 1), padding='same'),
+        LeakyReLU(),
+        Conv2D(filters=n_filters, kernel_size=8,  strides=(1, 1), padding='same'),
+        LeakyReLU(),
+        Flatten(),
+        Dense(units=n_filters),
+        LeakyReLU(),
+        Dense(units=1, activation='sigmoid'),
+    ])
+
+    model.compile(
+        optimizer=SGD(learning_rate=learning_rate),
+        loss=FocalLoss(gamma=2.0, alpha=0.25),
+        metrics=[BinaryAccuracy(), F1ScoreBinary(threshold=0.5)],
+    )
+    model.summary()
+    return model
+
+
+model1 = build_model()
 
 # Before fitting the model, let's dry run it on the Test data to verify the
 # output shape and the over all health and speed of the model
-'''
+
 model1.evaluate(X_test,y_test )
-'''
+
 
 # While dry testing the model, some shape issues were found.
 # They got fixed!
-'''
-temp = X_test[:10, :, :]
-temp1 = np.reshape(temp, newshape=(10, 256, 256,1))
 
-Image_Display(temp1[0, :, :, :], title = 'temp1 (256, 256, 1)')
-Image_Display(temp[0, :, :], title = 'temp (256, 256)')
-'''
 
 # We are now ready to fit the model
 history = model1.fit(x = X_train
                      ,y = y_train
                      ,batch_size = 512
-                     ,epochs = 5
+                     ,epochs = 8
                      ,validation_split = .2
                      )
 
@@ -561,40 +625,81 @@ history = model1.fit(x = X_train
 # Plotting the history
 plt.figure()
 plt.plot(history.history['loss'])
-plt.plot(history.history['val_binary_accuracy'])
+plt.plot(history.history['binary_accuracy'])
 #plt.plot(history.history['val_false_negatives_7'])
-plt.legend(['loss', 'Validation Acc'])
-plt.title('SGD 0.01, pooling 3x3, LeakyReLU()')
+plt.legend(['loss', 'binary_accuracy'])
+plt.title('SGD 0.0001, pooling 3x3, LeakyReLU()')
 plt.show()
 plt.clf()
+
+pprint.pprint(history.history)
 
 test_accuracy = model1.evaluate(X_test, y_test, batch_size = 512 )[1]
 
 print('Test set accuracy: {}%'.format(test_accuracy * 100))
 
-# NIIIIIIIIICE!!!!!!
-# That is really good, it is actialy perfect !!
-# Yay!!!!! Awesome !!!!
-
-# Let's save this beautiful model ! =) 
-model1.save('model1_take2.keras')
-
-#model1_test = tf.keras.models.load_model('model1_take2.tf')
 
 '''
-Notes:
-    Model1 is looking good ! The accracy plateaus after 5ish epochs. Which is
-    quite fast. The peak accuracy keep increasing as we feed it more data.
-    This is a sign of a healthy model. With the data from 
-    Image_Manipulation_Take_1 we con only achieve an accuracy of arround 80%
-    Let's go back and re-work an image amnipulation workflow
+Okay, so this is not good, there are a lot of red flags going on.
+- val_binary_accuracy is completely stagnant from the first epoch to the very
+last one
+- binary accuracy is completely stagnant from the 2nd epoch to the last one
+- the losses are going down but not by much...
 
-    Image_Manipulation_take_2 utilized data augmentation techniques allowing
-    us to triple the amount of cracked images wich were sparced. This lead to a masive 
-    accuracy improvement while still using the same model as before, Model1.
-    An accuracy of 100% was achived! Yay !!
-    
+Overall it does not look like the model is learning much...
+
+The last activation function is a sigmoid one, which is good....
+What I think is happening is that we have a strong class imbalance and
+the model is being very lazy and is just classifying every image as one class.
+We have 10 times more images of solid concrete than cracked concrete.
+
+Code update:
+    - adding F1score as a metric
+    - Change the loss function to FocalLoss, a loss function designed for class
+    imbalance
+
+Outcome:
+    - we received an f1_score of 0 on the test set... This is bad, it literally
+    cannot get any worse. But on the bright side it does prove our hypothesis
+    that the model is not learning and is predicting every image as solid.
+
 '''
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 '''
 -------------------------------------------------------------------------------
