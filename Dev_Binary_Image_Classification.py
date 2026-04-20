@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sun Mar 31 13:57:05 2024
+Created on Sun Apr 19 19:24:24 2026
 
-@author: Axel
+@author: morai
 
 Project:
 Implement Convolution layers in a deep neural network to spot cracks in 
@@ -68,15 +68,26 @@ import sklearn as skl
 import random
 from sklearn.preprocessing import normalize
 import pprint
+import cv2
 
 
 import glob
 import os
 from PIL import Image
 
-def Image_Display(image, cmap = 'gray', title = 'an image'):
-    plt.imshow(image, cmap = cmap)
-    plt.title(title)
+def Image_Display(image, image2=None, image3=None, cmap='gray', title='an image', title2='an image', title3='an image'):
+    images = [img for img in [image, image2, image3] if img is not None]
+    titles = [title, title2, title3][:len(images)]
+
+    if len(images) == 1:
+        plt.imshow(images[0], cmap=cmap)
+        plt.title(titles[0])
+    else:
+        fig, axes = plt.subplots(1, len(images), figsize=(5 * len(images), 5))
+        for ax, img, t in zip(axes, images, titles):
+            ax.imshow(img, cmap=cmap)
+            ax.set_title(t)
+        plt.tight_layout()
     plt.show()
     plt.clf()
 
@@ -121,7 +132,7 @@ for i in range(len(decks_c)):
 Image_Display(decks_c_all[1000, :, :, :])
 # images 2, 4, 5, 6, 8, 9, 1000 are quite interesting
 
-best_cracked = [decks_c[i, :, :, :] for i in [2, 4, 5, 6, 8, 9]]
+best_cracked = np.array([decks_c[i, :, :, :] for i in [2, 4, 5, 6, 8, 9]])
 
 # Get the solid / non-cracked images
 list_Decks_Solid = glob.glob('archive (2)/Decks/Non-cracked/*.jpg')
@@ -142,7 +153,14 @@ del list_Decks_Solid
 -------------------------------------------------------------------------------
 Image manipulation ------------------------------------------------------------
 -------------------------------------------------------------------------------
+
+Let's rework our image binarysation process as it erases some of faint crack
 '''
+
+
+
+for i in best_cracked:
+    print(ski.exposure.is_low_contrast(i))
 
 
 
@@ -151,9 +169,7 @@ Image manipulation ------------------------------------------------------------
 #------------------------------------------------------------------------------
 # Take 1 ------------------------------
 
-
-
-def image_manipulation_take_1(image: np.ndarray) -> np.ndarray:
+def image_manipulation_take_1_0(image: np.ndarray) -> np.ndarray:
     """
     Preprocesses an RGB image for crack detection.
     Apply global pixael normalization 
@@ -167,6 +183,43 @@ def image_manipulation_take_1(image: np.ndarray) -> np.ndarray:
     enhanced = ski.exposure.equalize_adapthist(red)
     return enhanced > ski.filters.threshold_otsu(enhanced)
 
+
+def image_manipulation_take_1_1(image: np.ndarray) -> np.ndarray:
+    """
+    Preprocesses an RGB image for crack detection.
+    Apply local exposure equalization pixel normalization 
+    Apply local thresholding for binarization
+    
+    Args:
+        image: RGB image array of shape (H, W, 3)
+    Returns:
+        Binary image array of shape (H, W)
+    """
+    red = image[:, :, 0].astype(np.float32) / 255.0
+    enhanced = ski.exposure.equalize_adapthist(red)
+    local_thresh = ski.filters.threshold_local(enhanced, block_size=41)  # tune block_size
+    return enhanced > local_thresh
+
+
+#-------------------------
+# Small scale test  ------
+
+best_cracked_manip_1_0 = np.array([image_manipulation_take_1_0(best_cracked[i, :, :, :])\
+                    for i in range(len(best_cracked))])
+    
+best_cracked_manip_1_1 = np.array([image_manipulation_take_1_1(best_cracked[i, :, :, :])\
+                    for i in range(len(best_cracked))])
+
+
+    
+    
+for i in range(len(best_cracked_manip_1_0)):
+    Image_Display(best_cracked[i, :, :],  best_cracked_manip_1_0[i, :, :],\
+                  best_cracked_manip_1_1[i, :, :],\
+                  title = 'raw image #' + str(i),\
+                  title2 = 'image_manipulation_take_1_0 #'+ str(i),\
+                  title3 = 'image_manipulation_take_1_1')
+        
 
 # End of Image Manipulation Take 1 ----
 #------------------------------------------------------------------------------
@@ -204,6 +257,7 @@ def image_manipulation_take_2(image: np.ndarray) -> np.ndarray:
 
     return stack > threshold  # (5, H, W) boolean
                      
+
 
 #
 # Detailed example
