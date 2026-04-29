@@ -55,6 +55,9 @@ Notes / overview:
     us to triple the amount of cracked images wich were sparced. This lead to a masive 
     accuracy improvement while still using the same model as before, Model1.
     An accuracy of 100% was achived! Yay !!
+    
+    
+    
 
 
 """
@@ -219,7 +222,10 @@ for i in range(len(best_cracked_manip_1_0)):
                   title = 'raw image #' + str(i),\
                   title2 = 'image_manipulation_take_1_0 #'+ str(i),\
                   title3 = 'image_manipulation_take_1_1')
-        
+#Opinion:
+#   the creackes are not more obvious after image_manipulation_take_1_1
+
+
 
 # End of Image Manipulation Take 1 ----
 #------------------------------------------------------------------------------
@@ -256,7 +262,30 @@ def image_manipulation_take_2(image: np.ndarray) -> np.ndarray:
     threshold = ski.filters.threshold_otsu(stack)
 
     return stack > threshold  # (5, H, W) boolean
-                     
+
+
+
+def image_augmentation_1(image: np.ndarray) -> np.ndarray:
+    """
+    Mirrors across 4 axes (vertical,horizontal, main diagonal, anti-diagonal).
+    Increases dataset size 5x (original + 4 flips).
+    
+    Parameters
+    ----------
+    image : np.ndarray
+        an image to be augmented
+
+    Returns
+    -------
+    5 imges (original + 4 flips)
+
+    """
+    vertical  = np.flipud(image)            # (i,j) → (N-1-i, j)
+    horizontal = np.fliplr(image)           # (i,j) → (i, N-1-j)
+    main_diag  = image.T                    # (i,j) → (j, i)
+    anti_diag  = image[::-1, ::-1].T        # (i,j) → (N-1-j, N-1-i)  ← fixed
+    
+    return np.stack([image, vertical, horizontal, main_diag, anti_diag])
 
 
 #

@@ -1,36 +1,57 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sun Apr 19 17:46:56 2026
+Created on Tue Apr 28 10:27:40 2026
 
 @author: morai
 
-Testing different architectures.
+Current situation: We just ran "Testing_Images_Pre_Processing_Pipelines.py" 
+and now we have 2 different set of images to compare. Yay!
 
-Due to the way CUDA handels memory, after each run the Console needs to be 
-restarted. Knowing that, importing the datasets each time will be a more
-efficient than creating them from scratch like it is done in 
-Main_Binary_Image_Classification.py
+
+
+Goal:  We are trying 2 different data preprocessing pipelines to see 
+which one lead to better accuracy. To compare them we are going to train a new 
+model with the same model architecture for both data sets. Then we are going
+to compare the accuracy on the test set. 
+    To ensure propper comparaison, the test and training split will be 
+done with the same ratio and seed.
+
+
+Here we will be testing im_c_1_0 and im_s_1_0
 
 
 """
+
 
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import skimage as ski
+from skimage.color import rgb2gray
 import sklearn as skl
 import random
 from sklearn.preprocessing import normalize
 import pprint
+import cv2
 
 
 import glob
 import os
 from PIL import Image
 
-def Image_Display(image, cmap = 'gray', title = 'an image'):
-    plt.imshow(image, cmap = cmap)
-    plt.title(title)
+def Image_Display(image, image2=None, image3=None, cmap='gray', title='an image', title2='an image', title3='an image'):
+    images = [img for img in [image, image2, image3] if img is not None]
+    titles = [title, title2, title3][:len(images)]
+
+    if len(images) == 1:
+        plt.imshow(images[0], cmap=cmap)
+        plt.title(titles[0])
+    else:
+        fig, axes = plt.subplots(1, len(images), figsize=(5 * len(images), 5))
+        for ax, img, t in zip(axes, images, titles):
+            ax.imshow(img, cmap=cmap)
+            ax.set_title(t)
+        plt.tight_layout()
     plt.show()
     plt.clf()
 
@@ -41,68 +62,57 @@ tf.test.is_gpu_available(cuda_only=False, min_cuda_compute_capability=None)
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     tf.config.experimental.set_memory_growth(gpus[0], True)
-
-
-
-
-
-
-
-
-
-
-'''
--------------  Importing Data  -----------
-'''
-
-X_test = np.load('X_test.npy')
-y_test = np.load('y_test.npy')
-
-X_train = np.load('X_train.npy')
-y_train = np.load('y_train.npy')
-
-"""
-# Sanity check
-for i in range(20):
-    Image_Display(X_train[i, :, :, :]\
-                  , title= 'image #' + str(i) + ' cracked: ' + str(y_train[i]))
-for i in range(20):
-    Image_Display(X_test[i, :, :, :]\
-                  , title= 'image #' + str(i) + ' cracked: ' + str(y_test[i]))
-
-"""
+    
+    
 
 '''
 -------------------------------------------------------------------------------
-Model Building ! --------------------------------------------------------------
+Run 1 with im_c_1_0 and im_s_1_0------------------------------------------------------------
 -------------------------------------------------------------------------------
 '''
 
-# Let's visualize some kernel size before creating our model:
+#
+# Importing Data
+#
 
-def visualize_kernel(image: np.ndarray, kernel_size: int, top_left: tuple[int, int]) -> None:
-    """Overlay a kernel footprint on an image and display it.
+try:
+    script_dir = os.path.dirname(os.path.abspath(__file__)) #runs on VS Code
+except NameError:
+#    script_dir = os.path.dirname(os.path.abspath(r'C:\Users\morai\Python_Project\Binary Classification Defect Detection\Computer_Vision_Cracked_Concrete_Detection-main\Computer_Vision_Cracked_Concrete_Detection-main\Main_Binary_Image_Classification.py'))  # Runs in Spyder
+    script_dir = os.path.dirname(os.path.abspath(r'C:\\Users\\morai\\Python_Project\\Binary Classification Defect Detection\\Computer_Vision_Cracked_Concrete_Detection-main\\Computer_Vision_Cracked_Concrete_Detection-main'))  # Runs in Spyder
 
-    Args:
-        image:       2-D grayscale array (H, W).
-        kernel_size: Side length of the square kernel overlay in pixels.
-        top_left:    (row, col) of the kernel's top-left corner.
-    """
-    row, col = top_left
-    h, w = image.shape[:2]
-    if row < 0 or col < 0 or row + kernel_size > h or col + kernel_size > w:
-        raise ValueError(
-            f"Kernel [{row}:{row+kernel_size}, {col}:{col+kernel_size}] "
-            f"falls outside image bounds ({h}, {w})."
-        )
-    im = image.copy()
-    im[row:row + kernel_size, col:col + kernel_size] = 0.5
-    Image_Display(im, title=f'Kernel {kernel_size}x{kernel_size} at ({row}, {col})')
+#'C:\\Users\\morai\\Python_Project\\Binary Classification Defect Detection\\Computer_Vision_Cracked_Concrete_Detection-main\\Computer_Vision_Cracked_Concrete_Detection-main'
+
+im_c_1_0 = np.load(r"datasets/im_c_1_0.npy")
+im_s_1_0 = np.load(r"datasets/im_s_1_0.npy")
 
 
-visualize_kernel(X_test[1, :, :], kernel_size=32, top_left=(100, 100))
-Image_Display(X_test[1, :, :])
 
+#
+# Splitting Data
+#
+
+# Create X_1_0
+X_1_0 = np.concatenate([im_c_1_0, im_s_1_0], axis=0)    
+
+# Create y_1_0
+y_1_0 = np.zeros(shape = (X_1_0.shape[0],))
+y_1_0[:len(im_c_1_0)] = 1
+
+del im_c_1_0, im_s_1_0
+
+# Create X_train, y_train, X_test, y_test
+from sklearn.model_selection import train_test_split
+X_train_1_0, X_test_1_0, y_train_1_0, y_test_1_0 = train_test_split(X_1_0
+                                                    ,y_1_0
+                                                    ,test_size = .25
+                                                    ,random_state = 3
+                                                    ,shuffle = True
+                                                    )
+
+#
+# Run the model
+#
 
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
@@ -118,6 +128,7 @@ from tensorflow.keras.metrics import BinaryAccuracy
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.optimizers import Adam, SGD
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+
 
 
 class F1ScoreBinary(F1Score):
@@ -153,66 +164,6 @@ class FocalLoss(tf.keras.losses.Loss):
         p_t = y_true * y_pred + (1 - y_true) * (1 - y_pred)
         focal_weight = self.alpha * tf.pow(1 - p_t, self.gamma)
         return tf.reduce_mean(focal_weight * bce)
-
-
-
-
-def build_model(
-    input_shape: tuple[int, int, int] = (256, 256, 1),
-    n_filters: int = 10,
-    learning_rate: float = 0.005,
-) -> Sequential:
-    """Build and compile the binary crack-detection CNN.
-
-
-    Architecture: MaxPool → Conv(16×16) → Conv(8×8) → Flatten → Dense → sigmoid.
-
-    Args:
-        input_shape:   (H, W, channels) of the input images.
-        n_filters:     Number of filters in each Conv2D layer.
-        learning_rate: Learning rate for the SGD optimiser.
-
-    Returns:
-        Compiled Keras Sequential model ready for training.
-    """
-    model = Sequential([
-        Input(shape=input_shape),
-#        MaxPooling2D(pool_size=(3, 3), padding='same'),
-        Conv2D(filters=32, kernel_size=16, strides=(3, 3), padding='same'),
-        LeakyReLU(),
-        
-        MaxPooling2D(pool_size=(3, 3), padding='same'),
-        
-        Conv2D(filters=64, kernel_size=8,  strides=(1, 1), padding='same'),
-        LeakyReLU(),
-        
-        MaxPooling2D(pool_size=(2, 2), padding='same'),
-        
-        Conv2D(filters=128, kernel_size=4,  strides=(1, 1), padding='same'),
-        LeakyReLU(),
-        
-        GlobalAveragePooling2D(),
-        
-        Dense(units=64),#64
-        LeakyReLU(),
-        
-        Dense(units=10),#10
-        LeakyReLU(),
-        
-#        Dense(units=8),
-#        LeakyReLU(),
-        
-        Dense(units=1, activation='sigmoid'),
-    ])
-
-    model.compile(
-        optimizer=Adam(learning_rate=learning_rate),
-        #loss=FocalLoss(gamma=2.0, alpha=0.25),
-        loss=tf.keras.losses.BinaryCrossentropy(),
-        metrics=[BinaryAccuracy(), F1ScoreBinary(threshold=0.5)],
-    )
-    model.summary()
-    return model
 
 
 
@@ -285,6 +236,7 @@ def build_model_1(
     return model
 
 
+
 model1 = build_model_1()
 
 # Before fitting the model, let's dry run it on the Test data to verify the
@@ -292,8 +244,6 @@ model1 = build_model_1()
 
 #model1.evaluate(X_test,y_test )
 
-# While dry testing the model, some shape issues were found.
-# They got fixed!
 
 
 # We are now ready to fit the model
@@ -313,8 +263,8 @@ early_stop_cb = EarlyStopping(
     verbose=1,
 )
 
-history = model1.fit(x = X_train
-                     ,y = y_train
+history = model1.fit(x = X_train_1_0
+                     ,y = y_train_1_0
                      ,batch_size = 512
                      ,epochs = 100
                      ,validation_split = .2
@@ -357,20 +307,10 @@ plt.clf()
 
 pprint.pprint(history.history)
 
-test_accuracy = model1.evaluate(X_test, y_test, batch_size = 512 )[1]
+test_accuracy = model1.evaluate(X_test_1_0, y_test_1_0, batch_size = 512 )[1]
 
 print('Test set accuracy: {}%'.format(test_accuracy * 100))
-
-
-
-
-
-
-
-
-
-
-
+# output: Test set accuracy: 80.0736665725708%
 
 
 
